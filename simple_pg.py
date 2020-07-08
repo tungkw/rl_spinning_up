@@ -1,6 +1,4 @@
 import agent
-import gradient_TD
-import MC
 import algo
 import numpy as np
 from matplotlib import pyplot as plt
@@ -27,7 +25,7 @@ class myAgent(agent.Agent):
         self.done = False
 
         feature_dims = self.env.observation_space.shape[0]
-        action_dims = self.env.action_space.shape[0]
+        action_dims = self.env.action_space.n
         hidden_dims = 32
         self.policy_model = get_policy_model([feature_dims, hidden_dims, action_dims])
 
@@ -40,15 +38,15 @@ class myAgent(agent.Agent):
         self.done = False
         return self.env.reset()
 
-    def policy_distribution(state):
+    def policy_distribution(self, state):
         return Categorical(logits=self.policy_model(state))
 
     def policy(self, state, action):
-        pmf = self.policy_distribution().probs
+        pmf = self.policy_distribution(torch.as_tensor(state, dtype=torch.float32)).probs
         return pmf[action]
     
     def policy_select(self, state):
-        return Categorical(self.policy_model(state)).sample().item()
+        return Categorical(logits=self.policy_model(torch.as_tensor(state, dtype=torch.float32))).sample().item()
 
     def update(self, t, state, action, target):
         pass
@@ -83,4 +81,4 @@ class myAgent(agent.Agent):
 if __name__ == "__main__":
     ag = myAgent()
     method = algo.Method(ag)
-    method.learn(100, step=float('inf'))
+    method.learn(1, step=float('inf'))
