@@ -57,7 +57,7 @@ class Method:
                         first_episode_rendered = True
                         break
                 G = np.sum(R)
-
+                
                 logp = self.agent.policy_distribution(torch.as_tensor(S, dtype=torch.float32)).log_prob(torch.as_tensor(A, dtype=torch.float32))
                 weights = torch.as_tensor([G] * len(S), dtype=torch.float32)
                 batch_loss += - torch.sum(logp * weights)
@@ -78,8 +78,9 @@ class Method:
             print('epoch: %3d \t loss: %.3f \t return: %.3f \t ep_len: %.3f'%
                 (epoch_i, batch_loss, np.mean(batch_rets), np.mean(batch_lens)))
 
-class myAgent():
+class myAgent(agent.Agent):
     def __init__(self, env):
+        super().__init__(discount=1.0)
         self.env = env
         feature_dims = self.env.observation_space.shape[0]
         action_dims = self.env.action_space.n

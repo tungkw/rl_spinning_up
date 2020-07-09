@@ -1,8 +1,9 @@
 import numpy as np
 
 class Method:
-    def __init__(self, agent):
+    def __init__(self, agent, env):
         self.agent = agent
+        self.env = env
     
     def learn(self, epoch=10, step=1, threshold=0.1, show=False):
         for episode in range(epoch):
