@@ -82,8 +82,7 @@ class myAgent():
         self.env = env
         feature_dims = self.env.observation_space.shape[0]
         action_dims = self.env.action_space.n
-        hidden_dims = 32
-        self.policy_model = get_policy_model([feature_dims, hidden_dims, action_dims])
+        self.action_value_model = None
 
     def policy_distribution(self, state):
         return Categorical(logits=self.policy_model(state))
