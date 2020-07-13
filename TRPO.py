@@ -9,7 +9,7 @@ import torch.nn as nn
 from torch.distributions.categorical import Categorical
 from torch.optim import Adam
 
-from utils import mlp, cumulate_return
+from utils import mlp, cumulate_return, run_episole, parameters_assignment
 
 class myAgent():
     def __init__(self, env):
@@ -18,7 +18,6 @@ class myAgent():
         action_dims = self.env.action_space.n
         self.policy_model = mlp([feature_dims, 64, 64, action_dims])
         self.state_value_model = mlp([feature_dims, 64, 64, 1])
-        # self.action_value_model = mlp([feature_dims, 64, 64, 1])
 
     def policy_distribution(self, state):
         return Categorical(logits=self.policy_model(torch.as_tensor(state, dtype=torch.float32)))
@@ -32,9 +31,6 @@ class myAgent():
     def state_value(self, state):
         return self.state_value_model(torch.as_tensor(state, dtype=torch.float32)).squeeze(-1)
     
-    # def action_value(self, state, action):
-    #     feature = None
-    #     return self.action_value_model(feature).squeeze(-1)
         
 
 class Method:
@@ -42,18 +38,17 @@ class Method:
         self.env = env
         self.agent = agent
     
-    def compute_policy_loss(self, obs, act, target):
-        logp = self.agent.policy_distribution(torch.as_tensor(obs, dtype=torch.float32)).log_prob(torch.as_tensor(act, dtype=torch.float32))
-        return -(logp * torch.as_tensor(target, dtype=torch.float32)).mean()
+    def compute_policy_loss(self, ratio, target):
+        return -(ratio * target).mean()
     
     def compute_state_value_loss(self, obs, ret):
         return ((self.agent.state_value(obs) - torch.as_tensor(ret, dtype=torch.float32))**2).mean()
 
     def train(self, epoch=50, batch_size=4000, lambd=0.97, gamma=0.99, p_lr=1e-2, v_lr=1e-3, train_v_iters=80, max_ep_len=1000, render=False):
-        p_optimizer = Adam(self.agent.policy_model.parameters(), lr=p_lr)
+        # p_optimizer = Adam(self.agent.policy_model.parameters(), lr=p_lr)
         v_optimizer = Adam(self.agent.state_value_model.parameters(), lr=v_lr)
         print(
-            "policy model size: {} state value model size {}".format(
+            "policy model size: {} \t state-value model size {}".format(
             sum([np.prod(p.shape) for p in self.agent.policy_model.parameters()]),
             sum([np.prod(p.shape) for p in self.agent.state_value_model.parameters()])
             )
@@ -75,21 +70,7 @@ class Method:
 
                 while len(batch_S) < batch_size:
 
-                    t = 0
-                    S = [self.env.reset()]
-                    A = [self.agent.policy_select(S[t])]
-                    R = [0]
-                    while True:
-                        if render and (not first_episode_rendered):
-                            self.env.render()
-                        S_next, r, done, _ = self.env.step(A[t])
-                        S.append(S_next)
-                        A.append(self.agent.policy_select(S_next))
-                        R.append(r)
-                        t+=1
-                        if done or t > max_ep_len:
-                            first_episode_rendered = True
-                            break
+                    S,A,R,done = run_episole(self.env, self.agent, max_ep_len, not first_episode_rendered)
                     
                     ret = cumulate_return(R[1:], gamma)
                     v = [self.agent.state_value(s) for s in S]
@@ -105,11 +86,16 @@ class Method:
                     batch_lens += [len(S)]
             
 
-            p_optimizer.zero_grad()
-            batch_p_loss = self.compute_policy_loss(batch_S, batch_A, batch_adv)
+            # conjugate gradient policy improvement
+            # p_optimizer.zero_grad()
+            rate = None
+            batch_p_loss = self.compute_policy_loss(rate, batch_adv)
             batch_p_loss.backward()
-            p_optimizer.step()
+            grad = batch_p_loss.parameters.grad()
+            parameters_assignment()
+            # p_optimizer.step()
 
+            # value function iteration
             print(np.max(batch_ret))
             for i in range(train_v_iters):
                 v_optimizer.zero_grad()
@@ -125,4 +111,4 @@ if __name__ == "__main__":
     env = gym.make('CartPole-v0')
     ag = myAgent(env)
     method = Method(env, ag)
-    method.train()#, render=True)
+    method.train()#render=True)
