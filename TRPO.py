@@ -91,7 +91,7 @@ class Method:
             rate = None
             batch_p_loss = self.compute_policy_loss(rate, batch_adv)
             batch_p_loss.backward()
-            grad = batch_p_loss.parameters.grad()
+            grad = batch_p_loss.parameters.grad
             parameters_assignment()
             # p_optimizer.step()
 

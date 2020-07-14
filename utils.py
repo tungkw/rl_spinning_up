@@ -1,5 +1,8 @@
+import numpy as np
+import torch
+import torch.nn as nn
 
-def mlp(sizes, activation=nn.Tanh, output_activation=nn.Identity):
+def mlp(sizes, activation=nn.Tanh, output_activation=nn.Tanh):
     layers = []
     for j in range(len(sizes)-1):
         layers += [nn.Linear(sizes[j], sizes[j+1]), output_activation() if j == len(sizes)-2 else activation()]
