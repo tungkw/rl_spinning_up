@@ -9,7 +9,7 @@ import torch.nn as nn
 from torch.distributions.categorical import Categorical
 from torch.optim import Adam
 
-from utils import mlp, cumulate_return
+from utils import mlp, cumulate_return, run_episole
 
 class myAgent():
     def __init__(self, env):
@@ -18,23 +18,24 @@ class myAgent():
         action_dims = self.env.action_space.n
         self.policy_model = mlp([feature_dims, 64, 64, action_dims])
         self.state_value_model = mlp([feature_dims, 64, 64, 1])
-        # self.action_value_model = mlp([feature_dims, 64, 64, 1])
 
     def policy_distribution(self, state):
         return Categorical(logits=self.policy_model(torch.as_tensor(state, dtype=torch.float32)))
 
-    def policy_p(self, state, action):
-        return self.policy_distribution(state).log_prob(torch.as_tensor(action, dtype=torch.float32)).exp()
+    def policy_logp(self, state, action):
+        return self.policy_distribution(state).log_prob(torch.as_tensor(action, dtype=torch.float32))
+    
+    def select_distribution(self, state):
+        return self.policy_distribution(state)
     
     def policy_select(self, state):
-        return self.policy_distribution(state).sample().item()
+        dist = self.select_distribution(state)
+        action = dist.sample()
+        p_a = dist.log_prob(action)
+        return action.item(), p_a.item()
 
     def state_value(self, state):
         return self.state_value_model(torch.as_tensor(state, dtype=torch.float32)).squeeze(-1)
-    
-    # def action_value(self, state, action):
-    #     feature = None
-    #     return self.action_value_model(feature).squeeze(-1)
         
 
 class Method:
@@ -75,21 +76,9 @@ class Method:
 
                 while len(batch_S) < batch_size:
 
-                    t = 0
-                    S = [self.env.reset()]
-                    A = [self.agent.policy_select(S[t])]
-                    R = [0]
-                    while True:
-                        if render and (not first_episode_rendered):
-                            self.env.render()
-                        S_next, r, done, _ = self.env.step(A[t])
-                        S.append(S_next)
-                        A.append(self.agent.policy_select(S_next))
-                        R.append(r)
-                        t+=1
-                        if done or t > max_ep_len:
-                            first_episode_rendered = True
-                            break
+                    S, A, R, _, done = run_episole(self.env, self.agent, 1000, render and not first_episode_rendered)
+                    if not first_episode_rendered:
+                        first_episode_rendered = True
                     
                     ret = cumulate_return(R[1:], gamma)
                     v = [self.agent.state_value(s) for s in S]
@@ -110,7 +99,6 @@ class Method:
             batch_p_loss.backward()
             p_optimizer.step()
 
-            print(np.max(batch_ret))
             for i in range(train_v_iters):
                 v_optimizer.zero_grad()
                 batch_v_loss = self.compute_state_value_loss(batch_S, batch_ret)
