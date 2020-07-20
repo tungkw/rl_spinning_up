@@ -1,11 +1,6 @@
 import numpy as np
-from matplotlib import pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
-
 import gym
-
 import torch
-import torch.nn as nn
 from torch.distributions.categorical import Categorical
 from torch.distributions.kl import kl_divergence
 from torch.optim import Adam

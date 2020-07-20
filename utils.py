@@ -25,17 +25,18 @@ def run_episole(env, agent, max_ep_len, render = False):
     S = [env.reset()]
     a, p_a = agent.policy_select(S[t])
     A = [a]
-    P_A = [p_a]
     R = [0]
+    P_A = [p_a]
     while True:
         if render:
             env.render()
         S_next, r, done, _ = env.step(A[t])
-        S.append(S_next)
         a, p_a = agent.policy_select(S_next)
+
+        S.append(S_next)
         A.append(a)
-        P_A.append(p_a)
         R.append(r)
+        P_A.append(p_a)
         t+=1
         if done or t > max_ep_len:
             break

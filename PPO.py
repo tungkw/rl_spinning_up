@@ -1,13 +1,8 @@
 import numpy as np
-from matplotlib import pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
-
 import gym
 
 import torch
-import torch.nn as nn
 from torch.distributions.categorical import Categorical
-from torch.distributions.kl import kl_divergence
 from torch.optim import Adam
 from torch.nn.functional import mse_loss
 
@@ -54,7 +49,7 @@ class Method:
         return -torch.min(loss, loss_clip).mean()
     
     def compute_state_value_loss(self, obs, ret):
-        return ((self.agent.state_value(obs) - torch.as_tensor(ret, dtype=torch.float32))**2).mean()
+        return mse_loss(self.agent.state_value(obs), torch.as_tensor(ret, dtype=torch.float32))
 
     def train(self, epoch=50, batch_size=4000, lambd=0.97, gamma=0.99, p_lr=3e-4, v_lr=1e-3, \
         train_policy_iters=80, train_v_iters=80, target_kl=0.01, max_ep_len=1000, render=False):

@@ -1,7 +1,4 @@
 import numpy as np
-from matplotlib import pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
-
 import gym
 
 import torch
@@ -22,8 +19,8 @@ class Method:
         self.env = env
         self.agent = agent
     
-    def compute_loss(self, obs, act, weights):
-        return -(self.agent.policy_logp(obs, act) * torch.as_tensor(weights, dtype=torch.float)).mean()
+    def compute_loss(self, obs, act, target):
+        return -(self.agent.policy_logp(obs, act) * torch.as_tensor(target, dtype=torch.float)).mean()
 
     def train(self, epoch=50, batch_size=4000, gamma=0.99, lr=1e-2, render=False):
         optimizer = Adam(self.agent.policy_model.parameters(), lr=lr)
@@ -85,9 +82,6 @@ class myAgent():
         action = dist.sample()
         p_a = dist.log_prob(action)
         return action.item(), p_a.item()
-
-    def state_value(self, state):
-        pass
 
 
 if __name__ == "__main__":
