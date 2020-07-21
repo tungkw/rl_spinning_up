@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 from torch.optim import Adam
-from torch.distributions.uniform import Uniform
 from torch.nn.functional import mse_loss
 import gym
 from utils import *
@@ -14,39 +13,83 @@ class myAgent():
         self.action_dims = self.env.action_space.shape[0]
         self.action_low = torch.as_tensor(self.env.action_space.low, dtype=torch.float32)
         self.action_high = torch.as_tensor(self.env.action_space.high, dtype=torch.float32)
-        self.policy_model = mlp([self.feature_dims, 256, 256, self.action_dims], output_activation=nn.Tanh)
-        self.action_value_model = mlp([self.feature_dims + self.action_dims, 256, 256, 1])
-        self.act_noise = 0.1
-
-    def policy_select_greedy(self, state):
-        action = self.policy_model(torch.as_tensor(state, dtype=torch.float32))
-        action = action * (self.action_high - self.action_low) + self.action_low
-        return action
-
-    def select_distribution(self, state):
-        dist = Uniform(self.action_low, self.action_high)
-        return dist
+        self.policy_model = mlp([self.feature_dims, 256, 256, self.action_dims], activation=nn.ReLU, output_activation=nn.Tanh)
+        self.action_value_model = mlp([self.feature_dims + self.action_dims, 256, 256, 1], activation=nn.ReLU)
 
     def policy_select(self, state):
-        dist = self.select_distribution(state)
-        action = dist.sample()
-        action = action * (self.action_high - self.action_low) + self.action_low
-        action += self.act_noise * torch.randn(self.action_dims)
-        action = torch.clamp(action, self.action_low.item(), self.action_high.item())
-        p_a = dist.log_prob(action)
-        return action.numpy(), p_a.item()
+        action = self.policy_model(torch.as_tensor(state, dtype=torch.float32))
+        # action = action * (self.action_high - self.action_low) + self.action_low
+        action = action * self.action_high
+        return action
 
     def action_value(self, state, action):
         feature = torch.cat([torch.as_tensor(state, dtype=torch.float32), torch.as_tensor(action, dtype=torch.float32)], dim=-1)
         return self.action_value_model(feature).squeeze(-1)
 
+    def sample_select(self, state):
+        action = self.env.action_space.sample()
+        logp = np.log(1/(self.action_high - self.action_low))
+        return action, logp
+
+    def greedy_select(self, state):
+        with torch.no_grad():
+            action = self.policy_select(state)
+            logp = np.log([1.0] * self.action_dims)
+            return action.numpy(), logp
+
+class ReplayBuffer():
+
+    def __init__(self, obs_dim, act_dim, size):
+        self.obs_buf = np.zeros((int(size), int(obs_dim)), dtype=np.float32)
+        self.obs_next_buf = np.zeros((int(size), int(obs_dim)), dtype=np.float32)
+        self.act_buf = np.zeros((int(size), int(act_dim)), dtype=np.float32)
+        self.r_buf = np.zeros((int(size)), dtype=np.float32)
+        self.done_buf = np.zeros((int(size)), dtype=np.float32)
+        self.ptr, self.size, self.max_size = 0, 0, size
+
+    def store(self, obs, obs_next, act, r, done):
+        self.obs_buf[self.ptr] = obs
+        self.obs_next_buf[self.ptr] = obs_next
+        self.act_buf[self.ptr] = act
+        self.r_buf[self.ptr] = r
+        self.done_buf[self.ptr] = done
+        self.ptr = (self.ptr + 1) % self.max_size
+        self.size = min(self.size + 1, self.max_size)
+
+    def sample_batch(self, batch_size=32):
+        idxs = np.random.randint(0, self.size, size=batch_size)
+        batch = dict(obs=self.obs_buf[idxs],
+                     obs_next=self.obs_next_buf[idxs],
+                     act=self.act_buf[idxs],
+                     r=self.r_buf[idxs],
+                     done=self.done_buf[idxs]
+                     )
+        return {k: torch.as_tensor(v, dtype=torch.float32) for k, v in batch.items()}
 
 class Method:
-    def __init__(self, env, agent, p_lr=3e-4, v_lr=1e-3):
+    def __init__(self, env, agent, p_lr=1e-3, v_lr=1e-3):
         self.env = env
         self.agent = agent
+
         # target model
         self.agent_c = deepcopy(self.agent)
+        for paras in self.agent_c.policy_model.parameters():
+            paras.requires_grad = False
+        for paras in self.agent_c.action_value_model.parameters():
+            paras.requires_grad = False
+        # replay buffer
+        self.dataset = ReplayBuffer(env.observation_space.shape[0], env.action_space.shape[0], int(1e6))
+        # stage sampling
+        self.random_sample = self.agent.sample_select
+        noise_scale = 0.1
+        def func(s):
+            with torch.no_grad():
+                action, logp = self.agent.greedy_select(s)
+            action += noise_scale * np.random.randn(self.agent.action_dims)
+            action = np.clip(action, self.agent.action_low.numpy(),
+                             self.agent.action_high.numpy())
+            return action, logp
+        self.noisy_greedy_sample = func
 
         self.p_optimizer = Adam(self.agent.policy_model.parameters(), lr=p_lr)
         self.q_optimizer = Adam(self.agent.action_value_model.parameters(), lr=v_lr)
@@ -57,33 +100,75 @@ class Method:
             )
         )
 
-    def compute_policy_loss(self, S, A):
+    def compute_policy_loss(self, S):
+        A = self.agent.policy_select(S)
         return - self.agent.action_value(S, A).mean()
 
     def compute_action_value_loss(self, S, A, target):
         return mse_loss(self.agent.action_value(S, A), torch.as_tensor(target, dtype=torch.float32))
 
-    def test(self):
-        for i in range(10):
-            pass
+    def test(self, max_ep_len=1000, gamma=0.99, render=False):
+        test_size = 10
+        rets = []  # for measuring episode returns
+        lens = []  # for measuring episode lengths
+        loss_ps = []
+        loss_qs = []
 
-    def get_batch(self):
-        return [],[],[]
+        for i in range(test_size):
 
-    def upda(self, polyak=0.995):
-        batch_S, batch_A, batch_Y = self.get_batch()
+            S = []
+            Sn = []
+            A = []
+            R = []
+            Done = []
+
+            # episole
+            for s, a, r, sn, an, _, _, done in run_episole(self.env, self.agent.greedy_select, max_ep_len, render):
+                self.dataset.store(s, sn, a, r, done)
+                S.append(s)
+                Sn.append(sn)
+                A.append(a)
+                R.append(r)
+                Done.append(done)
+
+            S = torch.as_tensor(S, dtype=torch.float32)
+            Sn = torch.as_tensor(Sn, dtype=torch.float32)
+            A = torch.as_tensor(A, dtype=torch.float32)
+            R = torch.as_tensor(R, dtype=torch.float32)
+            Done = torch.as_tensor(Done, dtype=torch.float32)
+
+            with torch.no_grad():
+                Q = self.agent_c.action_value(Sn, self.agent_c.policy_select(Sn))
+                Y = R + gamma * (1-Done) * Q
+                loss_q = self.compute_action_value_loss(S, A, Y)
+                loss_p = self.compute_policy_loss(S)
+                rets.append(torch.sum(R).item())
+                lens.append(len(S))
+                loss_ps.append(loss_p.item())
+                loss_qs.append(loss_q.item())
+        return np.mean(loss_ps), np.mean(loss_qs), np.mean(rets), np.mean(lens)
+
+    def update(self, data, gamma=0.99, polyak=0.995):
+        S, Sn, A, R, Done = \
+            data['obs'], data['obs_next'], data['act'], data['r'], data['done']
+
         # value function iteration
+        Q = self.agent_c.action_value(Sn, self.agent_c.policy_select(Sn))
+        Y = R + gamma * (1-Done) * Q
         self.q_optimizer.zero_grad()
-        batch_q_loss = self.compute_action_value_loss(batch_S, batch_A, batch_Y)
-        batch_q_loss.backward()
+        loss_q = self.compute_action_value_loss(S, A, Y)
+        loss_q.backward()
         self.q_optimizer.step()
 
         # policy iteration
-        # todo : do not compute the grad of action_value_model for efficiency
+        for paras in self.agent.action_value_model.parameters():
+            paras.requires_grad = False
         self.p_optimizer.zero_grad()
-        batch_p_loss = self.compute_policy_loss(batch_S, batch_A)
-        batch_p_loss.backward()
+        loss_p = self.compute_policy_loss(S)
+        loss_p.backward()
         self.p_optimizer.step()
+        for paras in self.agent.action_value_model.parameters():
+            paras.requires_grad = True
 
         # target model
         with torch.no_grad():
@@ -96,54 +181,42 @@ class Method:
                 target_model_para.data.mul_(polyak)
                 target_model_para.data.add_((1 - polyak) * model_para.data)
 
-    def train(self, epoch=50, batch_size=4000, lambd=0.97, gamma=0.99, , polyak=0.995, \
-              train_policy_iters=80, train_v_iters=80, target_kl=0.01, max_ep_len=1000, render=False):
+    def train(self, epoch=100, step_per_epoch=4000, batch_size=100, gamma=0.99, polyak=0.995, max_ep_len=1000,
+              update_after=1000, update_every=50, start_steps=10000, render=False):
 
-        total_S = []
-        total_A = []
-        total_Y = []
+        sample_func = self.random_sample
 
+        total_step = 0
         for epoch_i in range(epoch):
 
-            batch_S = []  # for observations
-            batch_A = []  # for actions
-            batch_Y = []  # for Q learning target
+            epoch_step = 0
+            while epoch_step < step_per_epoch:
 
-            batch_rets = []  # for measuring episode returns
-            batch_lens = []  # for measuring episode lengths
+                # episole
+                for s, a, r, sn, an, _, _, done in run_episole(self.env, sample_func, max_ep_len, render):
+                    self.dataset.store(s, sn, a, r, done)
 
-            first_episode_rendered = False
+                    total_step += 1
+                    epoch_step += 1
 
-            with torch.no_grad():
+                    # train
+                    if total_step > update_after and total_step % update_every == 0:
+                        for i in range(update_every):
+                            data = self.dataset.sample_batch(batch_size=batch_size)
+                            self.update(data, polyak=polyak)
+                    if total_step > start_steps:
+                        sample_func = self.noisy_greedy_sample
 
-                while len(batch_S) < batch_size:
-
-                    S, A, R, _, done = run_episole(self.env, self.agent, max_ep_len,
-                                                     render and not first_episode_rendered)
-                    if not first_episode_rendered:
-                        first_episode_rendered = True
-
-                    G = cumulate_return(R[1:], gamma)
-                    Y = [R[i+1] + gamma * agent_c.action_value([S[i+1]], agent_c.policy_select_greedy([S[i+1]])).item()
-                         if i < len(S)-2 else R[i+1]
-                         for i in range(len(S)-1)]\
-                        + [0]
-
-                    batch_S += S
-                    batch_A += A
-                    batch_Y += Y
-
-                    batch_rets += [G]
-                    batch_lens += [len(S)]
-
-
+            # test
+            mean_p_loss, mean_q_loss, mean_batch_rets, mean_batch_lens = self.test(max_ep_len=max_ep_len, gamma=gamma, render=render)
             print('epoch: %3d \t policy_loss: %.3f \t action_value_loss: %.3f \t mean return: %.3f \t mean ep_len: %.3f' %
-                  (epoch_i, batch_p_loss, batch_q_loss, np.mean(batch_rets), np.mean(batch_lens)))
+                  (epoch_i, mean_p_loss, mean_q_loss, mean_batch_rets, mean_batch_lens))
+
 
 
 if __name__ == '__main__':
-    env = gym.make("MountainCarContinuous-v0")
-    # env = gym.make("HalfCheetah-v2")
+    # env = gym.make("MountainCarContinuous-v0")
+    env = gym.make("HalfCheetah-v2")
     ag = myAgent(env)
     method = Method(env, ag)
     method.train()#render=True)

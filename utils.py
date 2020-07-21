@@ -20,25 +20,28 @@ def cumulate_return(R, discount):
         ret = [G] + ret
     return ret
 
-def run_episole(env, agent, max_ep_len, render = False):
+def run_episole(env, sample_func, max_ep_len, render = False):
     t = 0
-    S = [env.reset()]
-    a, p_a = agent.policy_select(S[t])
-    A = [a]
-    R = [0]
-    P_A = [p_a]
-    while True:
+    s = env.reset()
+    a, p_a = sample_func(s)
+    done = False
+    while not done and t < max_ep_len:
         if render:
             env.render()
-        S_next, r, done, _ = env.step(A[t])
-        a, p_a = agent.policy_select(S_next)
+        sn, r, done, _ = env.step(a)
+        an, p_an = sample_func(sn)
+        yield s, a, r, sn, an, p_a, p_an, done
+        s = sn
+        a = an
+        p_a = p_an
 
-        S.append(S_next)
-        A.append(a)
-        R.append(r)
-        P_A.append(p_a)
-        t+=1
-        if done or t > max_ep_len:
-            break
-    return S, A, R, P_A, done
 
+if __name__ == '__main__':
+    import gym
+    env = gym.make("HalfCheetah-v2")
+    def sample_func(s):
+        a = env.action_space.sample()
+        p_a = 0
+        return a,p_a
+    for data in run_episole(env, sample_func, 10):
+        print(data)
