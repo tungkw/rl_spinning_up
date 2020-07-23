@@ -23,17 +23,16 @@ def cumulate_return(R, discount):
 def run_episole(env, sample_func, max_ep_len, render = False):
     t = 0
     s = env.reset()
-    a, p_a = sample_func(s)
+    a, logp = sample_func(s)
     done = False
     while not done and t < max_ep_len:
         if render:
             env.render()
         sn, r, done, _ = env.step(a)
-        an, p_an = sample_func(sn)
-        yield s, a, r, sn, an, p_a, p_an, done
+        yield s, a, r, sn, logp, done
         s = sn
-        a = an
-        p_a = p_an
+        a, logp = sample_func(s)
+        t += 1
 
 
 if __name__ == '__main__':

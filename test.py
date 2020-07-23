@@ -2,13 +2,23 @@ import torch
 import torch.nn as nn
 import utils
 
-if __name__ == "__main__":
-    model = utils.mlp([3,3,3])
-    result = model(torch.as_tensor([[1,2,1]], dtype=torch.float32))
-    result.mean().backward()
+def func1():
+    return 1
 
-    state_dict = model.state_dict()
-    for name, parameters in state_dict.items():
-        print(name)
-        print(parameters)
-        print(parameters.grad)
+def func2():
+    return 2
+
+def test(func):
+    for i in range(10):
+        yield func()
+
+if __name__ == "__main__":
+    f = func1
+    def func():
+        return f()
+    k = 0
+    for i in test(func):
+        print(i)
+        k += 1
+        if k > 5:
+            f = func2
