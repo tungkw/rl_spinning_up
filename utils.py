@@ -34,6 +34,8 @@ def run_episole(env, sample_func, max_ep_len, render = False):
         a, logp = sample_func(s)
         t += 1
 
+def f32tensor(data):
+    return torch.as_tensor(data, dtype=torch.float32)
 
 if __name__ == '__main__':
     import gym

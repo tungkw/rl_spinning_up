@@ -24,12 +24,13 @@ class Logger:
             print("can not execute operator on data with key '{}'".format(key))
             return None
 
-    def show(self, msg, ops=None, map=None, keep=False):
+    def show(self, msg=None, ops=None, map=None, keep=False):
         print('-'*50)
-        print(msg)
+        if msg is not None:
+            print(msg)
         if ops is not None:
             if map is None:
-                print("require operator map")
+                print("require operator mapping")
                 return
             for key, op in ops.items():
                 if key not in self.log_data:
