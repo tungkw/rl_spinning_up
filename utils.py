@@ -20,7 +20,7 @@ def cumulate_return(R, discount):
         ret = [G] + ret
     return ret
 
-def run_episole(env, sample_func, max_ep_len, render = False):
+def run_episole(env, sample_func, max_ep_len, step=0, render = False):
     t = 0
     s = env.reset()
     a, logp = sample_func(s)
@@ -29,9 +29,10 @@ def run_episole(env, sample_func, max_ep_len, render = False):
         if render:
             env.render()
         sn, r, done, _ = env.step(a)
-        yield s, a, r, sn, logp, done
-        s = sn
-        a, logp = sample_func(s)
+        if not step or (t+1) % step == 0 or done:
+            yield s, a, r, sn, logp, done
+            s = sn
+            a, logp = sample_func(s)
         t += 1
 
 def f32tensor(data):

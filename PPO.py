@@ -7,6 +7,7 @@ from torch.optim import Adam
 from torch.nn.functional import mse_loss
 
 from utils import mlp, cumulate_return, run_episole
+import time
 
 class myAgent():
     def __init__(self, env):
@@ -80,21 +81,39 @@ class Method:
 
                 while len(batch_S) < batch_size:
 
-                    S, A, R, P_A, done = run_episole(self.env, self.agent, max_ep_len, render and not first_episode_rendered)
+                    S = []
+                    A = []
+                    R = []
+                    Sn = []
+                    P_A = []
+                    Done = []
+                    # ts = time.time()
+                    for s,a,r,sn,logp,done in run_episole(self.env, self.agent.policy_select,
+                                                           max_ep_len, render and not first_episode_rendered):
+                        S.append(s)
+                        A.append(a)
+                        R.append(r)
+                        Sn.append(sn)
+                        P_A.append(logp)
+                        Done.append(done)
+
+                    # print("time", time.time() - ts)
                     if not first_episode_rendered:
                         first_episode_rendered = True
 
-                    ret = cumulate_return(R[1:], gamma)
-                    v = [self.agent.state_value(s) for s in S]
-                    delta = [R[i+1] + gamma * v[i+1] - v[i] for i in range(len(v)-1)]
-                    adv = cumulate_return(delta, gamma*lambd)
+                    ret = cumulate_return(R, gamma)
+                    v_s = self.agent.state_value(S).numpy()
+                    v_sn = self.agent.state_value(Sn).numpy()
+                    delta = np.array(R) + gamma * v_sn - v_s
+                    adv = cumulate_return(delta.tolist(), gamma*lambd)
                     
-                    batch_S += S[:-1]
-                    batch_A += A[:-1]
-                    batch_P_A += P_A[:-1]
+                    batch_S += S
+                    batch_A += A
+                    batch_P_A += P_A
                     batch_ret += ret
                     batch_adv += adv
-                    
+                    # print(len(batch_S),len(batch_A),len(batch_P_A),len(batch_ret),len(batch_adv))
+
                     batch_rets += [ret[0]]
                     batch_lens += [len(S)]
 
@@ -114,6 +133,7 @@ class Method:
                     break
 
             # value function iteration
+            # print(len(batch_S), len(batch_ret))
             batch_v_loss = self.compute_state_value_loss(batch_S, batch_ret)
             for i in range(train_v_iters):
                 v_optimizer.zero_grad()
