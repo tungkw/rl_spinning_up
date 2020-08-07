@@ -1,0 +1,3 @@
+epoch:   0 	 policy_loss: -0.027 	 state_value_loss: 0.210 	 return: 0.277 	 ep_len: 76.774
+epoch:   1 	 policy_loss: 0.006 	 state_value_loss: 0.157 	 return: 0.241 	 ep_len: 73.455
+epoch:   2 	 policy_loss: 0.009 	 state_value_loss: 0.121 	 return: 0.205 	 ep_len: 73.836

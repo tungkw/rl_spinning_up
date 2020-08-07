@@ -6,8 +6,8 @@ from torch.distributions.categorical import Categorical
 from torch.optim import Adam
 from torch.nn.functional import mse_loss
 
-from utils import mlp, cumulate_return, run_episole
-import time
+from utils.utils import mlp, cumulate_return, run_episole
+
 
 class myAgent():
     def __init__(self, env):

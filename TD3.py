@@ -1,9 +1,6 @@
-import torch
-import torch.nn as nn
 from torch.optim import Adam
 from torch.nn.functional import mse_loss
-import gym
-from utils import *
+from utils.utils import *
 from copy import deepcopy
 
 class myAgent(nn.Module):

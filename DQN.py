@@ -1,17 +1,20 @@
-import torch
-import torch.nn as nn
 from torch.optim import Adam
 from torch.nn.functional import mse_loss
-import gym
-from utils import *
-from logger import Logger
-from copy import deepcopy
+from utils.utils import *
+from utils.logger import Logger
 import matplotlib.pyplot as plt
 import cv2 as cv
 import time
 
 device = 'cuda:0'
 # device = 'cpu'
+
+def bilinear(coor, value):
+    x,y = coor
+    return value[0] * (1 - x) * (1 - y) + \
+           value[1] * x * (1 - y) + \
+           value[2] * (1 - x) * y + \
+           value[3] * x * y
 
 def downsampling(img, dsize):
     osize = img.shape[:2]
@@ -27,12 +30,6 @@ def downsampling(img, dsize):
             img_d[i][j] = bilinear([x,y], img[u:np.min([u+2,osize[0]]), v:np.min([v+2,osize[1]])].reshape(-1).tolist())
     return img_d
 
-def bilinear(coor, value):
-    x,y = coor
-    return value[0] * (1 - x) * (1 - y) + \
-           value[1] * x * (1 - y) + \
-           value[2] * (1 - x) * y + \
-           value[3] * x * y
 
 class ActionValueModel(nn.Module):
     def __init__(self, action_dims):
@@ -143,7 +140,7 @@ class Method:
         gray = downsampling(cv.cvtColor(o, cv.COLOR_RGB2GRAY), gray_size)
         [h_d, w_d] = (np.subtract(gray_size, self.crop_size) / 2).astype(np.int)
         cropped = gray[h_d + 5:gray_size[0]-h_d+5, w_d:gray_size[1]-w_d]
-        cropped /= 255;
+        cropped /= 255
         return cropped
 
     def get_test_sa(self):

@@ -5,7 +5,7 @@ import torch
 from torch.distributions.categorical import Categorical
 from torch.optim import Adam
 
-from utils import mlp, cumulate_return, run_episole
+from utils.utils import mlp, cumulate_return, run_episole
 
 class myAgent():
     def __init__(self, env):

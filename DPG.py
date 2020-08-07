@@ -4,7 +4,7 @@ import torch
 from torch.distributions.normal import Normal
 from torch.optim import Adam
 
-from utils import mlp, cumulate_return, run_episole
+from utils.utils import cumulate_return, run_episole
 
 
 class myAgent():

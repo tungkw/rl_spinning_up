@@ -1,10 +1,7 @@
-import torch
-import torch.nn as nn
 from torch.optim import Adam
 from torch.nn.functional import mse_loss
-import gym
-from utils import *
-from logger import Logger
+from utils.utils import *
+from utils.logger import Logger
 from copy import deepcopy
 
 
