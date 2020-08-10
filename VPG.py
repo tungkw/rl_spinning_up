@@ -5,7 +5,7 @@ import torch
 from torch.distributions.categorical import Categorical
 from torch.optim import Adam
 
-from utils.utils import mlp, cumulate_return, run_episole
+from utils.utils import *
 
 class myAgent():
     def __init__(self, env):
@@ -46,6 +46,10 @@ class Method:
     def compute_state_value_loss(self, obs, ret):
         return ((self.agent.state_value(obs) - torch.as_tensor(ret, dtype=torch.float32))**2).mean()
 
+    def get_action(self, obs):
+        a, logp = self.agent.policy_select(torch.from_numpy(obs))
+        return a, logp
+
     def train(self, epoch=50, batch_size=4000, lambd=0.97, gamma=0.99, p_lr=1e-2, v_lr=1e-3, train_v_iters=80, max_ep_len=1000, render=False):
         p_optimizer = Adam(self.agent.policy_model.parameters(), lr=p_lr)
         v_optimizer = Adam(self.agent.state_value_model.parameters(), lr=v_lr)
@@ -72,17 +76,27 @@ class Method:
 
                 while len(batch_S) < batch_size:
 
-                    S, A, R, _, done = run_episole(self.env, self.agent, 1000, render and not first_episode_rendered)
-                    if not first_episode_rendered:
-                        first_episode_rendered = True
+                    S = []
+                    Sn = []
+                    A = []
+                    R = []
+                    for s, a, r, sn, _, done in run_episole(self.env, self.get_action, 1000, 0,
+                                                            render and not first_episode_rendered):
+                        S.append(s)
+                        A.append(a)
+                        R.append(r)
+                        Sn.append(sn)
+                    # S, A, R, _, done = run_episole(self.env, self.agent, 1000, render and not first_episode_rendered)
+                    # if not first_episode_rendered:
+                    #     first_episode_rendered = True
                     
-                    ret = cumulate_return(R[1:], gamma)
+                    ret = cumulate_return(R, gamma)
                     v = [self.agent.state_value(s) for s in S]
-                    delta = [R[i+1] + gamma * v[i+1] - v[i] for i in range(len(v)-1)]
+                    delta = [R[i] + gamma * self.agent.state_value(Sn[i]) - self.agent.state_value(S[i]) for i in range(len(S))]
                     adv = cumulate_return(delta, gamma*lambd)
                     
-                    batch_S += S[:-1]
-                    batch_A += A[:-1]
+                    batch_S += S
+                    batch_A += A
                     batch_ret += ret
                     batch_adv += adv
                     
